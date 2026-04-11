@@ -128,29 +128,6 @@ docker compose down
 - `GET /events/version`
 - `GET /favicon.ico`
 
-## העלאה ל־GitHub
-
-1. צור Repository חדש ב־GitHub (ללא README אם כבר קיים מקומי).
-2. ודא שאתה בתיקיית הפרויקט.
-3. הרץ:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit: Subtitle Optimizer web app"
-git branch -M main
-git remote add origin https://github.com/<YOUR_USER>/<YOUR_REPO>.git
-git push -u origin main
-```
-
-אם כבר יש remote קיים:
-
-```bash
-git remote -v
-git remote set-url origin https://github.com/<YOUR_USER>/<YOUR_REPO>.git
-git push -u origin main
-```
-
 ## Dependencies
 
 - `Flask>=3.0.0`

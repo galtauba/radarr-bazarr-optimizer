@@ -180,6 +180,9 @@
       let pollTimer = null;
 
       function shouldDelayRefresh() {
+        if (body.classList.contains("modal-open")) {
+          return true;
+        }
         const el = document.activeElement;
         if (!el) return false;
         const tag = (el.tagName || "").toLowerCase();
@@ -258,6 +261,15 @@
         pendingRefresh = false;
         window.location.reload();
       });
+
+      const observer = new MutationObserver(() => {
+        if (!pendingRefresh) return;
+        if (document.visibilityState !== "visible") return;
+        if (shouldDelayRefresh()) return;
+        pendingRefresh = false;
+        window.location.reload();
+      });
+      observer.observe(body, { attributes: true, attributeFilter: ["class"] });
     })();
   </script>
 </body>

@@ -206,6 +206,7 @@ a:hover { color: #a4ccff; }
 
 .panel-body { padding: 12px; }
 .panel-body { min-width: 0; }
+.section-gap-top { margin-top: 14px; }
 
 .tabs {
   display: flex;

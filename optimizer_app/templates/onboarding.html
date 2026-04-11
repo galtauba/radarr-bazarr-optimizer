@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block toolbar_left %}
+<span>Onboarding</span>
+{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h1 class="panel-title">First Run Onboarding</h1>
+  </div>
+  <div class="panel-body">
+    <p class="muted">Configure the system before starting background processing.</p>
+    <form method="post" class="grid-form">
+      {% for key in all_keys %}
+        {% if key in ["radarr_api_key","bazarr_api_key"] %}
+          <label>{{ key }}
+            <input type="password" name="{{ key }}" value="{{ settings.get(key,'') }}">
+          </label>
+        {% elif key in ["preferred_languages"] %}
+          <label>{{ key }} (comma separated)
+            <input type="text" name="{{ key }}" value="{{ settings.get(key,[])|join(',') }}">
+          </label>
+        {% elif settings.get(key) is boolean %}
+          <label class="checkbox"><input type="checkbox" name="{{ key }}" {% if settings.get(key) %}checked{% endif %}> {{ key }}</label>
+        {% else %}
+          <label>{{ key }}
+            <input type="text" name="{{ key }}" value="{{ settings.get(key,'') }}">
+          </label>
+        {% endif %}
+      {% endfor %}
+      <h2 class="full panel-title">Authentication</h2>
+      <label>auth_mode
+        <select name="auth_mode">
+          <option value="none" {% if settings.get('auth_mode')=='none' %}selected{% endif %}>none</option>
+          <option value="basic" {% if settings.get('auth_mode')=='basic' %}selected{% endif %}>basic</option>
+        </select>
+      </label>
+      <label>auth_username
+        <input type="text" name="auth_username" value="{{ settings.get('auth_username','') }}">
+      </label>
+      <label>auth_password (optional)
+        <input type="password" name="auth_password" value="">
+      </label>
+      <input type="hidden" name="auth_password_hash" value="{{ settings.get('auth_password_hash','') }}">
+      <button type="submit" class="btn full">Save Onboarding</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "Radarr Bazarr Optimizer" }}</title>
+  <link rel="icon" href="{{ url_for('favicon') }}" sizes="any">
+  <link rel="shortcut icon" href="{{ url_for('favicon') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="app-body" data-live-version="{{ live_state_version or '' }}">
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img class="brand-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="Subtitle Optimizer logo">
+        <div class="brand-pill">OPTIMIZER</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="{{ url_for('movies') }}" class="{% if request.endpoint in ['movies', 'movie_detail'] %}active{% endif %}">Movies</a>
+        <a href="{{ url_for('settings_page') }}" class="{% if request.endpoint in ['settings_page', 'onboarding'] %}active{% endif %}">Settings</a>
+      </nav>
+    </aside>
+
+    <section class="main-shell">
+      <header class="topbar topbar-main">
+        <div class="toolbar-left"></div>
+        <div class="toolbar-right">
+          <form method="get" action="{{ url_for('movies') }}" class="inline-form search-form" autocomplete="off">
+            {% if request.endpoint == 'movies' and request.args.get('view') %}
+            <input type="hidden" name="view" value="{{ request.args.get('view') }}">
+            {% endif %}
+            <input id="globalSearchInput" class="search-input" type="search" name="q" value="{{ request.args.get('q', '') }}" placeholder="Search movies">
+            <div id="searchSuggestBox" class="suggest-box" hidden></div>
+          </form>
+          {% if auth_enabled and session.get('authenticated') %}
+          <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+            <button type="submit" class="btn ghost">Logout</button>
+          </form>
+          {% endif %}
+        </div>
+      </header>
+      <header class="topbar topbar-menu">
+        <div class="toolbar-left">{% block toolbar_left %}{% endblock %}</div>
+        <div class="toolbar-right">{% block toolbar_right %}{% endblock %}</div>
+      </header>
+
+      <main class="content-wrap">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-wrap">
+              {% for cat, msg in messages %}
+                <div class="flash {{ cat }}">{{ msg }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+      </main>
+    </section>
+  </div>
+  <script>
+    (function () {
+      const input = document.getElementById("globalSearchInput");
+      const box = document.getElementById("searchSuggestBox");
+      if (!input || !box) return;
+
+      let timer = null;
+      let items = [];
+      let activeIndex = -1;
+      let controller = null;
+
+      function hideBox() {
+        box.hidden = true;
+        box.innerHTML = "";
+        items = [];
+        activeIndex = -1;
+      }
+
+      function render() {
+        if (!items.length) {
+          hideBox();
+          return;
+        }
+        box.hidden = false;
+        box.innerHTML = items.map((item, idx) => (
+          `<a class="suggest-item${idx === activeIndex ? " active" : ""}" href="${item.url}" data-index="${idx}">
+            <span class="title">${item.label}</span>
+            <span class="meta">${item.status || "-"}</span>
+          </a>`
+        )).join("");
+      }
+
+      function fetchSuggest() {
+        const q = input.value.trim();
+        if (q.length < 2) {
+          hideBox();
+          return;
+        }
+
+        if (controller) controller.abort();
+        controller = new AbortController();
+
+        fetch(`/movies/suggest?q=${encodeURIComponent(q)}`, { signal: controller.signal })
+          .then((r) => r.ok ? r.json() : Promise.reject(new Error("suggest_failed")))
+          .then((data) => {
+            items = Array.isArray(data.items) ? data.items : [];
+            activeIndex = -1;
+            render();
+          })
+          .catch(() => {});
+      }
+
+      input.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(fetchSuggest, 150);
+      });
+
+      input.addEventListener("keydown", (evt) => {
+        if (!items.length) return;
+        if (evt.key === "ArrowDown") {
+          evt.preventDefault();
+          activeIndex = (activeIndex + 1) % items.length;
+          render();
+        } else if (evt.key === "ArrowUp") {
+          evt.preventDefault();
+          activeIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
+          render();
+        } else if (evt.key === "Enter" && activeIndex >= 0) {
+          evt.preventDefault();
+          window.location.href = items[activeIndex].url;
+        } else if (evt.key === "Escape") {
+          hideBox();
+        }
+      });
+
+      box.addEventListener("mousedown", (evt) => {
+        const link = evt.target.closest(".suggest-item");
+        if (!link) return;
+        evt.preventDefault();
+        window.location.href = link.getAttribute("href");
+      });
+
+      document.addEventListener("click", (evt) => {
+        if (evt.target === input || box.contains(evt.target)) return;
+        hideBox();
+      });
+    })();
+  </script>
+  <script>
+    (function () {
+      const formatter = new Intl.DateTimeFormat(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+
+      document.querySelectorAll("[data-utc-ts]").forEach((el) => {
+        const raw = String(el.getAttribute("data-utc-ts") || "").trim();
+        if (!raw) return;
+        const dt = new Date(raw);
+        if (Number.isNaN(dt.getTime())) return;
+        el.textContent = formatter.format(dt);
+        el.title = raw;
+      });
+    })();
+  </script>
+  <script>
+    (function () {
+      if (!window.EventSource) return;
+
+      const body = document.body;
+      let currentVersion = String(body.getAttribute("data-live-version") || "");
+      let initialized = false;
+      let pendingRefresh = false;
+      let pollTimer = null;
+
+      function shouldDelayRefresh() {
+        const el = document.activeElement;
+        if (!el) return false;
+        const tag = (el.tagName || "").toLowerCase();
+        return tag === "input" || tag === "textarea" || tag === "select";
+      }
+
+      function startPollingFallback() {
+        if (pollTimer) return;
+        pollTimer = window.setInterval(() => {
+          fetch("{{ url_for('events_version') }}", { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error("poll_failed"))))
+            .then((data) => {
+              const nextVersion = String((data && data.version) || "");
+              if (!nextVersion) return;
+              if (nextVersion !== currentVersion) {
+                currentVersion = nextVersion;
+                body.setAttribute("data-live-version", currentVersion);
+                triggerRefresh();
+              }
+            })
+            .catch(() => {});
+        }, 10000);
+      }
+
+      function triggerRefresh() {
+        if (document.visibilityState === "hidden" || shouldDelayRefresh()) {
+          pendingRefresh = true;
+          return;
+        }
+        window.location.reload();
+      }
+
+      const stream = new EventSource("{{ url_for('events_stream') }}");
+
+      stream.addEventListener("state", (evt) => {
+        try {
+          const data = JSON.parse(evt.data || "{}");
+          const nextVersion = String(data.version || "");
+          if (!nextVersion) return;
+
+          if (!initialized) {
+            initialized = true;
+            if (currentVersion && nextVersion !== currentVersion) {
+              currentVersion = nextVersion;
+              body.setAttribute("data-live-version", currentVersion);
+              triggerRefresh();
+              return;
+            }
+            currentVersion = nextVersion || currentVersion;
+            body.setAttribute("data-live-version", currentVersion);
+            return;
+          }
+
+          if (nextVersion !== currentVersion) {
+            currentVersion = nextVersion;
+            body.setAttribute("data-live-version", currentVersion);
+            triggerRefresh();
+          }
+        } catch (_) {}
+      });
+
+      stream.onerror = function () {
+        startPollingFallback();
+      };
+
+      document.addEventListener("visibilitychange", () => {
+        if (!pendingRefresh) return;
+        if (document.visibilityState === "visible" && !shouldDelayRefresh()) {
+          pendingRefresh = false;
+          window.location.reload();
+        }
+      });
+
+      document.addEventListener("focusin", () => {
+        if (!pendingRefresh || shouldDelayRefresh()) return;
+        pendingRefresh = false;
+        window.location.reload();
+      });
+    })();
+  </script>
+</body>
+</html>

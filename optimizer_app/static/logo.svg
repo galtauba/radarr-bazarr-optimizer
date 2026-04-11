@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Subtitle Optimizer logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f3b5b"/>
+      <stop offset="100%" stop-color="#2c5687"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)" stroke="#325f90" stroke-width="2"/>
+  <text x="32" y="34" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="27" font-weight="800" fill="#ecf6ff" stroke="#000000" stroke-width="1.4" paint-order="stroke">CC</text>
+
+  <rect x="12" y="42.5" width="40" height="12" rx="4.5" fill="#11243a" stroke="#5f8fbe" stroke-width="1.5"/>
+  <rect x="20" y="46.2" width="24" height="2.1" rx="1.05" fill="#cfe6ff"/>
+  <rect x="23" y="50.0" width="18" height="2.1" rx="1.05" fill="#cfe6ff"/>
+</svg>

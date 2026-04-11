@@ -1,0 +1,13 @@
+services:
+  subtitle-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: subtitle-optimizer
+    restart: unless-stopped
+    ports:
+      - "8686:8686"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

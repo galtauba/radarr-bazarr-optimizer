@@ -1,135 +1,158 @@
-# Radarr + Bazarr Subtitle Optimizer
+# Subtitle Optimizer (Radarr + Bazarr)
 
-סקריפט אוטומציה שמטרתו לטפל במצב שבו Bazarr מוצא כתוביות באיכות לא מספקת לסרט שכבר ירד ב-Radarr, ואז לנסות להחליף לגרסה מתאימה יותר.
+מערכת אוטומציה לזרימת Radarr/Bazarr עם ממשק Web, SQLite וניהול תהליך רקע.
 
-## מה הסקריפט עושה בפועל
+## מה יש במערכת
 
-1. מזהה סרט חדש ב-Radarr ומחכה עד שיש קובץ (`hasFile`/`movieFile`).
-2. ממתין `BAZARR_GRACE_SECONDS`.
-3. מושך מצב כתוביות מ-Bazarr (כולל history כשמופעל).
-4. מדרג כתוביות לפי שפה + score, ומחשב `good/poor` לפי **score של Bazarr** (לא לפי התאמת שם קובץ).
-5. אם `poor`:
-   - מפעיל Manual Search ב-Bazarr.
-   - בודק שוב.
-6. אם עדיין `poor`:
-   - קורא `GET /api/providers/movies?radarrid=<id>`.
-   - מחלץ `release_info` לרשימת שמות release.
-7. עובר ל-Radarr:
-   - שלב 0: `GET /api/v3/moviefile?movieId=<id>`.
-   - שלב 0.1: מוחק קבצים קיימים (אם מופעל).
-   - שלב 1: `GET /api/v3/release?movieId=<id>`.
-   - שלב 2: בוחר מועמדים רק מתוך pool של `release_info`, עם עדיפות:
-     - `downloadAllowed=true` + `rejections=[]`
-     - fallback: `downloadAllowed=true` + `rejections!=[]`
-   - שלב 3: `POST /api/v3/release`.
-8. אם grab לא מתחיל בפועל, מנסה את המועמד הבא ברשימה.
-9. מאמת התחלה דרך Queue (ולפי קונפיג גם History) לפני סימון הצלחה.
+- ממשק Web מבוסס `Flask + Jinja`.
+- `Onboarding` בכניסה ראשונה.
+- מסך `Settings` עם שמירה ל־SQLite.
+- `Worker` ברקע עם Start/Stop/Auto-start.
+- דף סרטים ודף סרט מפורט.
+- חיפוש גלובלי + autocomplete.
+- עדכון תצוגה אוטומטי ללא רענון ידני (SSE + fallback polling).
+- הצגת חותמות זמן לפי הזמן המקומי של הדפדפן.
+- לוגו מותאם + favicon.
 
-## נקודה חשובה
-
-`POST /api/v3/release` שחוזר 200 לא מבטיח שההורדה התחילה.  
-הסקריפט בודק Queue/History, ואם לא רואה התחלה אמיתית - ממשיך לגרסה אחרת או מסמן `manual_required`.
-
----
-
-## דרישות
-
-- Python 3.9+
-- `requests`
-- `python-dotenv`
+## התקנה והרצה
 
 ```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
+python app.py
 ```
 
----
+ברירת מחדל:
+- כתובת: `http://127.0.0.1:8686`
+- DB: `data/optimizer.db`
 
-## הרצה
+## Docker / Docker Compose
 
-הסקריפט טוען `.env` אוטומטית (באמצעות `python-dotenv`).
+נוצרו קבצים:
+- `Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+
+הרצה עם Docker Compose:
 
 ```bash
-python radarr_bazarr_option1.py
+docker compose up -d --build
 ```
 
----
-
-## קובץ `.env` לדוגמה
-
-```env
-RADARR_URL=http://localhost:7878
-RADARR_API_KEY=YOUR_RADARR_API_KEY
-
-BAZARR_URL=http://localhost:6767
-BAZARR_API_KEY=YOUR_BAZARR_API_KEY
-BAZARR_API_KEY_HEADER=X-Api-Key
-
-POLL_SECONDS=300
-BAZARR_GRACE_SECONDS=900
-RETRY_COOLDOWN_SECONDS=21600
-MAX_FOLLOWUP_ATTEMPTS=1
-
-STATE_FILE=state.json
-LOG_LEVEL=INFO
-
-HTTP_TIMEOUT=20
-HTTP_RETRIES=3
-HTTP_BACKOFF_SECONDS=2
-VERIFY_SSL=true
-USER_AGENT=radarr-bazarr-option1/1.0
-
-PREFERRED_LANGUAGES=he,heb,en,eng
-GOOD_SUBTITLE_MIN_SCORE=90
-MATCH_SIMILARITY_THRESHOLD=45
-EXACT_MATCH_ONLY=true
-STRICT_PROFILE_GUARD=true
-USE_BAZARR_SCORE_WHEN_RELEASE_MISSING=true
-TREAT_FILE_REFERENCE_AS_GOOD_WHEN_SCORE_MISSING=true
-
-BAZARR_MODE=manual_api
-BAZARR_MOVIE_LOOKUP_ENDPOINT=/api/movies
-BAZARR_MOVIE_LOOKUP_FALLBACK_ENDPOINTS=/api/movies/wanted,/api/movies/history
-BAZARR_ENABLE_HISTORY_LOOKUP=true
-BAZARR_LOOKUP_STYLE=query_param_radarrid
-
-BAZARR_SEARCH_ENDPOINT=/api/movies/subtitles
-ENABLE_BAZARR_SEARCH_TRIGGER=false
-
-ENABLE_BAZARR_MANUAL_SEARCH_ON_POOR=true
-BAZARR_MANUAL_SEARCH_ENDPOINTS=/api/movies/subtitles,/api/movies/manual
-BAZARR_MANUAL_SEARCH_METHOD=AUTO
-BAZARR_MANUAL_SEARCH_WAIT_SECONDS=8
-BAZARR_MANUAL_SEARCH_MAX_ATTEMPTS=1
-BAZARR_MANUAL_SEARCH_RETRY_COOLDOWN_SECONDS=1800
-
-ENABLE_BAZARR_PROVIDERS_RELEASE_HINT=true
-BAZARR_PROVIDERS_MOVIES_ENDPOINT=/api/providers/movies
-
-ENABLE_RADARR_RELEASE_INSPECTION=true
-ENABLE_RADARR_MOVIES_SEARCH_FALLBACK=false
-ENABLE_RADARR_DELETE_EXISTING_FILE_ON_POOR=true
-
-RADARR_GRAB_VERIFY_ENABLED=true
-RADARR_GRAB_VERIFY_TIMEOUT_SECONDS=45
-RADARR_GRAB_VERIFY_POLL_SECONDS=5
-RADARR_GRAB_VERIFY_USE_HISTORY=false
-```
-
----
-
-## כלי בדיקה
-
-קיים סקריפט עזר לבדיקת API של Bazarr:
+עצירה:
 
 ```bash
-python bazarr_api_probe.py --endpoint /api/movies/history --query radarrId=11
-python bazarr_api_probe.py --endpoint /api/providers/movies --query radarrid=11
+docker compose down
 ```
 
----
+שמירת נתונים מקומית:
+- ה־compose ממפה volume מקומי:
+  - `./data` (במכונה שלך) -> `/app/data` (בקונטיינר)
+- לכן ה־SQLite נשמר מחוץ לקונטיינר תחת:
+  - `./data/optimizer.db`
 
-## הערות תפעול
+שים לב:
+- ודא שב־`.env` מוגדר:
+  - `DB_PATH=data/optimizer.db`
 
-- אם סרט סומן `done` ב-`state.json`, הוא לא יעובד שוב עד שתמחק את הרשומה שלו.
-- אם Radarr מחזיר שגיאת Download Client (למשל qBittorrent נכשל), הסקריפט יעבור למועמד הבא.
-- אם כל המועמדים נכשלו או לא התחילו בפועל, הסרט יסומן `manual_required`.
+## קונפיגורציה
+
+אפשר להגדיר ערכי התחלה דרך `.env` (ראה `.env.example`), ואז לנהל הכל דרך ה־UI.
+
+משתנים חשובים:
+- `RADARR_URL`
+- `RADARR_API_KEY`
+- `BAZARR_URL`
+- `BAZARR_API_KEY`
+- `WEB_HOST`
+- `WEB_PORT`
+- `WEB_SECRET_KEY`
+- `AUTH_MODE` (`none` או `basic`)
+- `AUTH_USERNAME`
+- `AUTH_PASSWORD_HASH`
+
+הערה:
+- בקונפיגורציית `basic`, בלי שם משתמש/סיסמה תקינים, המערכת תחזור אוטומטית ל־`none`.
+
+## אחסון נתונים
+
+מקור אמת:
+- `data/optimizer.db` (SQLite)
+
+טבלאות עיקריות:
+- `settings`
+- `app_meta`
+- `movies`
+- `movie_events`
+
+הערה:
+- `state.json` לא בשימוש במערכת ה־Web הנוכחית.
+
+## סנכרון סרטים מול Radarr
+
+- בכל cycle מתבצע reconcile מול Radarr.
+- סרט שנמחק ב־Radarr מסומן soft-delete (`removed_at`).
+- אם אותו סרט חוזר, נפתח cycle חדש ונשמרת היסטוריה.
+- ב־first run סרטים קיימים מסומנים כ־`done` כדי שהמערכת תתמקד בסרטים חדשים.
+
+## Real-time UI (ללא Refresh ידני)
+
+- השרת פותח stream ב־`/events/stream` (SSE).
+- הדפדפן מאזין לעדכונים ומעדכן תצוגה אוטומטית.
+- אם SSE לא זמין, יש fallback ל־`/events/version` (polling).
+
+## Authentication
+
+- `none`: ללא התחברות.
+- `basic`: מסך Login.
+
+התנהגות UI:
+- כפתור `Logout` מוצג רק כש־`auth_mode=basic` וגם המשתמש מחובר.
+
+## מסלולים מרכזיים
+
+- `GET /` Dashboard
+- `GET|POST /onboarding`
+- `GET|POST /settings`
+- `GET /movies`
+- `GET /movies/suggest`
+- `GET /movies/<movie_id>`
+- `POST /movies/<movie_id>/recheck`
+- `POST /movies/<movie_id>/retry`
+- `POST /movies/<movie_id>/state`
+- `POST /worker/start`
+- `POST /worker/stop`
+- `GET /worker/status`
+- `GET /events/stream`
+- `GET /events/version`
+- `GET /favicon.ico`
+
+## העלאה ל־GitHub
+
+1. צור Repository חדש ב־GitHub (ללא README אם כבר קיים מקומי).
+2. ודא שאתה בתיקיית הפרויקט.
+3. הרץ:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit: Subtitle Optimizer web app"
+git branch -M main
+git remote add origin https://github.com/<YOUR_USER>/<YOUR_REPO>.git
+git push -u origin main
+```
+
+אם כבר יש remote קיים:
+
+```bash
+git remote -v
+git remote set-url origin https://github.com/<YOUR_USER>/<YOUR_REPO>.git
+git push -u origin main
+```
+
+## Dependencies
+
+- `Flask>=3.0.0`
+- `requests>=2.31.0`
+- `python-dotenv>=1.0.0`

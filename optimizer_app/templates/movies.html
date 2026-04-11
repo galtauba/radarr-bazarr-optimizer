@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block toolbar_left %}
+<a class="toolbar-link" href="{{ url_for('movies') }}">Movies</a>
+{% endblock %}
+{% block toolbar_right %}
+<div class="tabs">
+  <a href="{{ url_for('movies', view='active') }}" class="{% if view=='active' %}active{% endif %}">Active</a>
+  <a href="{{ url_for('movies', view='removed') }}" class="{% if view=='removed' %}active{% endif %}">Removed</a>
+  <a href="{{ url_for('movies', view='all') }}" class="{% if view=='all' %}active{% endif %}">All</a>
+</div>
+{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-body">
+    {% if search_query %}
+    <p class="muted">Search: "{{ search_query }}" | Results: {{ rows|length }} / {{ total_rows }}</p>
+    {% endif %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="col-icon"></th>
+          <th style="width:36%">Movie</th>
+          <th>Status</th>
+          <th>Subtitle Evaluation</th>
+          <th>Done</th>
+          <th>Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if not rows %}
+        <tr>
+          <td colspan="7" class="muted">No movies matched your search/filter.</td>
+        </tr>
+        {% endif %}
+        {% for row in rows %}
+        <tr>
+          <td class="col-icon"><span class="row-icon">🔖</span></td>
+          <td>
+            <a class="movie-row-title" href="{{ url_for('movie_detail', movie_id=row.radarr_movie_id) }}">{{ row.title }}{% if row.year %} ({{ row.year }}){% endif %}</a>
+          </td>
+          <td>
+            {% if row.status in ["done", "radarr_followup_done"] %}
+              <span class="badge ok">{{ row.status }}</span>
+            {% elif row.status == "manual_required" %}
+              <span class="badge bad">{{ row.status }}</span>
+            {% elif row.status in ["subtitle_matched_poor", "subtitle_missing"] %}
+              <span class="badge warn">{{ row.status }}</span>
+            {% else %}
+              <span class="badge neutral">{{ row.status or "-" }}</span>
+            {% endif %}
+          </td>
+          <td>{{ row.subtitle_evaluation or "-" }}</td>
+          <td>
+            {% if row.done %}
+              <span class="badge ok">DONE</span>
+            {% else %}
+              <span class="badge neutral">OPEN</span>
+            {% endif %}
+          </td>
+          <td class="muted"><span data-utc-ts="{{ row.updated_at }}">{{ row.updated_at }}</span></td>
+          <td>
+            <a class="action-icon" href="{{ url_for('movie_detail', movie_id=row.radarr_movie_id) }}">Open</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">Show {{ rows|length }} of {{ total_rows if search_query else rows|length }} entries</p>
+  </div>
+</section>
+{% endblock %}

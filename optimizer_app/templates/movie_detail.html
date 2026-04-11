@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block toolbar_left %}
+<a class="toolbar-link" href="{{ url_for('movies') }}">Movies</a>
+<span>/</span>
+<span>{{ detail.title }}</span>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="panel-head">
+    <div class="actions">
+      <form method="post" action="{{ url_for('movie_recheck', movie_id=detail.radarr_movie_id) }}" class="inline-form">
+        <button type="submit" class="btn ghost">Manual Recheck</button>
+      </form>
+      <form method="post" action="{{ url_for('movie_retry', movie_id=detail.radarr_movie_id) }}" class="inline-form">
+        <button type="submit" class="btn ghost">Retry Follow-up</button>
+      </form>
+    </div>
+    <div class="actions">
+      <form method="post" action="{{ url_for('movie_state_action', movie_id=detail.radarr_movie_id) }}" class="inline-form">
+        <input type="hidden" name="action" value="mark_done">
+        <button type="submit" class="btn">Mark Done</button>
+      </form>
+      <form method="post" action="{{ url_for('movie_state_action', movie_id=detail.radarr_movie_id) }}" class="inline-form">
+        <input type="hidden" name="action" value="reopen">
+        <button type="submit" class="btn warn">Reopen</button>
+      </form>
+    </div>
+  </div>
+  <div class="hero-main">
+    <h1 class="hero-title">{{ detail.title }}</h1>
+    <div class="hero-meta">
+      <span class="chip">Radarr ID {{ detail.radarr_movie_id }}</span>
+      <span class="chip">Cycle {{ detail.active_cycle }}</span>
+      <span class="chip">Year {{ detail.year or "?" }}</span>
+      <span class="badge lang">{{ detail.state.subtitle_evaluation or "no-eval" }}</span>
+    </div>
+    {% if detail.state.release_hint %}
+    <div class="chip">{{ detail.state.release_hint }}</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2 class="panel-title">Current State</h2>
+  </div>
+  <div class="panel-body">
+  <div class="stats">
+    <div class="stat"><span>Status</span><strong>{{ detail.state.status or "-" }}</strong></div>
+    <div class="stat"><span>Done</span><strong>{{ "yes" if detail.state.done else "no" }}</strong></div>
+    <div class="stat"><span>Subtitle Eval</span><strong>{{ detail.state.subtitle_evaluation or "-" }}</strong></div>
+    <div class="stat"><span>Last Error</span><strong>{{ detail.state.last_error or "-" }}</strong></div>
+  </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2 class="panel-title">Detail Windows</h2>
+  </div>
+  <div class="panel-body">
+    <div class="actions">
+      <button type="button" class="btn ghost" data-modal-target="modal-subtitle-snapshot">Subtitle Snapshot</button>
+      <button type="button" class="btn ghost" data-modal-target="modal-lifecycle-cycles">Lifecycle Cycles</button>
+      <button type="button" class="btn ghost" data-modal-target="modal-event-timeline">Event Timeline</button>
+      <button type="button" class="btn ghost" data-modal-target="modal-event-data">Event Data</button>
+    </div>
+  </div>
+</section>
+
+<div class="modal-overlay" id="modal-subtitle-snapshot" aria-hidden="true">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-label="Subtitle Snapshot">
+    <div class="modal-head">
+      <h2 class="panel-title">Subtitle Snapshot</h2>
+      <button type="button" class="icon-btn modal-close" data-modal-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <pre class="json-box">{{ detail.state.selected_subtitle | tojson(indent=2) }}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-lifecycle-cycles" aria-hidden="true">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-label="Lifecycle Cycles">
+    <div class="modal-head">
+      <h2 class="panel-title">Lifecycle Cycles</h2>
+      <button type="button" class="icon-btn modal-close" data-modal-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <table class="data-table">
+        <thead><tr><th>Cycle</th><th>Removed</th><th>Removed At</th><th>Updated</th></tr></thead>
+        <tbody>
+          {% for c in detail.cycles %}
+          <tr>
+            <td>{{ c.cycle }}</td>
+            <td>{% if c.is_removed %}<span class="badge bad">yes</span>{% else %}<span class="badge ok">no</span>{% endif %}</td>
+            <td>{% if c.removed_at %}<span data-utc-ts="{{ c.removed_at }}">{{ c.removed_at }}</span>{% else %}-{% endif %}</td>
+            <td class="muted"><span data-utc-ts="{{ c.updated_at }}">{{ c.updated_at }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-event-timeline" aria-hidden="true">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-label="Event Timeline">
+    <div class="modal-head">
+      <h2 class="panel-title">Event Timeline</h2>
+      <button type="button" class="icon-btn modal-close" data-modal-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <table class="data-table">
+        <thead><tr><th>Time</th><th>Type</th><th>Message</th></tr></thead>
+        <tbody>
+          {% for e in detail.events %}
+          <tr>
+            <td class="muted"><span data-utc-ts="{{ e.created_at }}">{{ e.created_at }}</span></td>
+            <td><span class="badge neutral">{{ e.event_type }}</span></td>
+            <td>{{ e.message }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-event-data" aria-hidden="true">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-label="Event Data">
+    <div class="modal-head">
+      <h2 class="panel-title">Event Data</h2>
+      <button type="button" class="icon-btn modal-close" data-modal-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <table class="data-table">
+        <thead><tr><th>Time</th><th>Cycle</th><th>Data</th></tr></thead>
+        <tbody>
+          {% for e in detail.events %}
+          <tr>
+            <td class="muted"><span data-utc-ts="{{ e.created_at }}">{{ e.created_at }}</span></td>
+            <td>{{ e.cycle }}</td>
+            <td><pre class="tiny-json">{{ e.data | tojson(indent=2) }}</pre></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const body = document.body;
+    const openButtons = document.querySelectorAll("[data-modal-target]");
+    const closeButtons = document.querySelectorAll("[data-modal-close]");
+
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+      modal.classList.add("is-open");
+      modal.setAttribute("aria-hidden", "false");
+      body.classList.add("modal-open");
+    }
+
+    function closeModal(modal) {
+      if (!modal) return;
+      modal.classList.remove("is-open");
+      modal.setAttribute("aria-hidden", "true");
+      if (!document.querySelector(".modal-overlay.is-open")) {
+        body.classList.remove("modal-open");
+      }
+    }
+
+    openButtons.forEach((btn) => {
+      btn.addEventListener("click", () => openModal(btn.getAttribute("data-modal-target")));
+    });
+
+    closeButtons.forEach((btn) => {
+      btn.addEventListener("click", () => closeModal(btn.closest(".modal-overlay")));
+    });
+
+    document.querySelectorAll(".modal-overlay").forEach((overlay) => {
+      overlay.addEventListener("click", (evt) => {
+        if (evt.target === overlay) closeModal(overlay);
+      });
+    });
+
+    document.addEventListener("keydown", (evt) => {
+      if (evt.key !== "Escape") return;
+      document.querySelectorAll(".modal-overlay.is-open").forEach((modal) => closeModal(modal));
+    });
+  })();
+</script>
+{% endblock %}

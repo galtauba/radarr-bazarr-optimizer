@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.bk
+data
+optimizer.db
+*.db
+*.db-shm
+*.db-wal
+state.json

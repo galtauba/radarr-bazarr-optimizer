@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block toolbar_left %}
+<span>Overview</span>
+{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h1 class="panel-title">System Dashboard</h1>
+    <div class="actions">
+      <form method="post" action="{{ url_for('worker_start') }}" class="inline-form">
+        <button type="submit" class="btn">Start Worker</button>
+      </form>
+      <form method="post" action="{{ url_for('worker_stop') }}" class="inline-form">
+        <button type="submit" class="btn ghost">Stop Worker</button>
+      </form>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="stats">
+      <div class="stat"><span>Worker</span><strong>{{ "Running" if worker.running else "Stopped" }}</strong></div>
+      <div class="stat"><span>Active Movies</span><strong>{{ counts.active }}</strong></div>
+      <div class="stat"><span>Removed Movies</span><strong>{{ counts.removed }}</strong></div>
+      <div class="stat"><span>Manual Required</span><strong>{{ counts.manual_required }}</strong></div>
+      <div class="stat"><span>Done</span><strong>{{ counts.done }}</strong></div>
+    </div>
+    <p class="muted">
+      Last run:
+      {% if last_run %}
+      <span data-utc-ts="{{ last_run }}">{{ last_run }}</span>
+      {% else %}
+      N/A
+      {% endif %}
+    </p>
+  </div>
+</section>
+{% endblock %}

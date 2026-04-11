@@ -1,226 +1,42 @@
-# 🎬 Radarr + Bazarr Subtitle Match Optimizer
+# Radarr + Bazarr Subtitle Optimizer
 
-## 🧠 Overview
+סקריפט אוטומציה שמטרתו לטפל במצב שבו Bazarr מוצא כתוביות באיכות לא מספקת לסרט שכבר ירד ב-Radarr, ואז לנסות להחליף לגרסה מתאימה יותר.
 
-זהו סקריפט Python שמטרתו לשפר התאמה בין סרטים (Radarr) לבין כתוביות (Bazarr).
+## מה הסקריפט עושה בפועל
 
-הבעיה:
-- Radarr מוריד גרסה כלשהי של סרט
-- Bazarr מוצא כתוביות — אבל לא תמיד לגרסה תואמת
-- נוצר מצב של:
-  ❌ כתוביות לא מסונכרנות  
-  ❌ כתוביות חלקיות  
-  ❌ mismatch בין release
+1. מזהה סרט חדש ב-Radarr ומחכה עד שיש קובץ (`hasFile`/`movieFile`).
+2. ממתין `BAZARR_GRACE_SECONDS`.
+3. מושך מצב כתוביות מ-Bazarr (כולל history כשמופעל).
+4. מדרג כתוביות לפי שפה + score, ומחשב `good/poor` לפי **score של Bazarr** (לא לפי התאמת שם קובץ).
+5. אם `poor`:
+   - מפעיל Manual Search ב-Bazarr.
+   - בודק שוב.
+6. אם עדיין `poor`:
+   - קורא `GET /api/providers/movies?radarrid=<id>`.
+   - מחלץ `release_info` לרשימת שמות release.
+7. עובר ל-Radarr:
+   - שלב 0: `GET /api/v3/moviefile?movieId=<id>`.
+   - שלב 0.1: מוחק קבצים קיימים (אם מופעל).
+   - שלב 1: `GET /api/v3/release?movieId=<id>`.
+   - שלב 2: בוחר מועמדים רק מתוך pool של `release_info`, עם עדיפות:
+     - `downloadAllowed=true` + `rejections=[]`
+     - fallback: `downloadAllowed=true` + `rejections!=[]`
+   - שלב 3: `POST /api/v3/release`.
+8. אם grab לא מתחיל בפועל, מנסה את המועמד הבא ברשימה.
+9. מאמת התחלה דרך Queue (ולפי קונפיג גם History) לפני סימון הצלחה.
 
-הפתרון:
-הסקריפט מזהה מתי זה קורה ומנסה **לכוון את Radarr להוריד גרסה שמתאימה לכתוביות**.
+## נקודה חשובה
 
----
-
-# ⚙️ Flow מלא (הכי חשוב להבין)
-
-## שלב 1 — זיהוי סרט חדש
-- הסקריפט קורא:
-```
-
-GET /api/v3/movie
-
-```
-- מזהה סרטים שלא קיימים ב־state.json
-
-סטטוס:
-```
-
-waiting_for_file
-
-```
+`POST /api/v3/release` שחוזר 200 לא מבטיח שההורדה התחילה.  
+הסקריפט בודק Queue/History, ואם לא רואה התחלה אמיתית - ממשיך לגרסה אחרת או מסמן `manual_required`.
 
 ---
 
-## שלב 2 — המתנה להורדת הסרט
-הסקריפט מחכה עד ש:
-```
-
-hasFile == true
-
-```
-או:
-```
-
-movieFile != null
-
-```
-
-❗ חשוב:
-לא עושים כלום לפני שיש קובץ
-
----
-
-## שלב 3 — Grace Period ל־Bazarr
-
-הסקריפט מחכה:
-```
-
-BAZARR_GRACE_SECONDS (ברירת מחדל: 15 דקות)
-
-```
-
-למה?
-- לתת ל־Bazarr לעבוד רגיל
-- לא להתערב מוקדם מדי
-
-סטטוס:
-```
-
-bazarr_waiting
-
-```
-
----
-
-## שלב 4 — בדיקת מצב כתוביות
-
-הסקריפט שואל את Bazarr:
-- האם יש כתוביות?
-- איזה?
-- מה ה־release name?
-
-⚠️ חשוב:
-Bazarr API **לא אחיד בין גרסאות**
-
-לכן יש adapter בקוד שצריך התאמה.
-
----
-
-## שלב 5 — הערכת איכות התאמה
-
-הסקריפט מחשב:
-
-### ✔️ האם יש כתוביות
-### ✔️ שפה
-### ✔️ score
-### ✔️ metadata בשם הכתובית
-### ✔️ דמיון לשם הקובץ
-
----
-
-### 🧮 איך נמדד הדמיון?
-
-השוואה בין:
-```
-
-Movie file name
-VS
-Subtitle release name
-
-```
-
-כולל:
-- resolution (1080p וכו')
-- source (WEB, BluRay)
-- codec
-- release group
-
----
-
-## שלב 6 — החלטה
-
-### מצב 1 — התאמה טובה
-```
-
-status = done
-
-```
-
-### מצב 2 — אין כתוביות
-```
-
-subtitle_missing
-
-```
-
-### מצב 3 — התאמה גרועה
-```
-
-subtitle_matched_poor
-
-```
-
----
-
-## שלב 7 — Radarr Follow-up
-
-אם אין התאמה טובה:
-
-### מה הסקריפט עושה:
-1. מפיק `release_hint`
-2. בודק releases ב־Radarr:
-```
-
-GET /api/v3/release?movieId=...
-
-```
-
-3. משווה similarity
-
-4. ואז:
-```
-
-POST /api/v3/command
-{
-"name": "MoviesSearch"
-}
-
-```
-
----
-
-## ⚠️ מגבלה חשובה מאוד
-
-❗ הסקריפט לא מבצע:
-> Grab של release ספציפי
-
-למה?
-כי זה לא API יציב ללא בדיקה אצלך.
-
-יש TODO בקוד.
-
----
-
-# 🧱 מבנה הפרויקט
-
-```
-
-project/
-├─ radarr_bazarr_option1.py
-├─ README.md
-├─ .env
-├─ requirements.txt
-├─ state.json (נוצר לבד)
-
-```
-
----
-
-# 📦 התקנה
-
-## 1. Python
-
-```
-
-Python 3.9+
-
-````
-
----
-
-## 2. התקנת תלויות
-
-```bash
-pip install requests
-````
-
-או:
+## דרישות
+
+- Python 3.9+
+- `requests`
+- `python-dotenv`
 
 ```bash
 pip install -r requirements.txt
@@ -228,22 +44,25 @@ pip install -r requirements.txt
 
 ---
 
-## 3. קובץ requirements.txt
+## הרצה
 
-```txt
-requests>=2.31.0
+הסקריפט טוען `.env` אוטומטית (באמצעות `python-dotenv`).
+
+```bash
+python radarr_bazarr_option1.py
 ```
 
 ---
 
-# 🔐 קובץ הגדרות (.env)
+## קובץ `.env` לדוגמה
 
 ```env
 RADARR_URL=http://localhost:7878
-RADARR_API_KEY=XXXX
+RADARR_API_KEY=YOUR_RADARR_API_KEY
 
 BAZARR_URL=http://localhost:6767
-BAZARR_API_KEY=XXXX
+BAZARR_API_KEY=YOUR_BAZARR_API_KEY
+BAZARR_API_KEY_HEADER=X-Api-Key
 
 POLL_SECONDS=300
 BAZARR_GRACE_SECONDS=900
@@ -255,231 +74,62 @@ LOG_LEVEL=INFO
 
 HTTP_TIMEOUT=20
 HTTP_RETRIES=3
+HTTP_BACKOFF_SECONDS=2
+VERIFY_SSL=true
+USER_AGENT=radarr-bazarr-option1/1.0
 
 PREFERRED_LANGUAGES=he,heb,en,eng
-
-GOOD_SUBTITLE_MIN_SCORE=80
+GOOD_SUBTITLE_MIN_SCORE=90
 MATCH_SIMILARITY_THRESHOLD=45
+EXACT_MATCH_ONLY=true
+STRICT_PROFILE_GUARD=true
+USE_BAZARR_SCORE_WHEN_RELEASE_MISSING=true
+TREAT_FILE_REFERENCE_AS_GOOD_WHEN_SCORE_MISSING=true
 
 BAZARR_MODE=manual_api
-
 BAZARR_MOVIE_LOOKUP_ENDPOINT=/api/movies
+BAZARR_MOVIE_LOOKUP_FALLBACK_ENDPOINTS=/api/movies/wanted,/api/movies/history
+BAZARR_ENABLE_HISTORY_LOOKUP=true
 BAZARR_LOOKUP_STYLE=query_param_radarrid
 
 BAZARR_SEARCH_ENDPOINT=/api/movies/subtitles
+ENABLE_BAZARR_SEARCH_TRIGGER=false
+
+ENABLE_BAZARR_MANUAL_SEARCH_ON_POOR=true
+BAZARR_MANUAL_SEARCH_ENDPOINTS=/api/movies/subtitles,/api/movies/manual
+BAZARR_MANUAL_SEARCH_METHOD=AUTO
+BAZARR_MANUAL_SEARCH_WAIT_SECONDS=8
+BAZARR_MANUAL_SEARCH_MAX_ATTEMPTS=1
+BAZARR_MANUAL_SEARCH_RETRY_COOLDOWN_SECONDS=1800
+
+ENABLE_BAZARR_PROVIDERS_RELEASE_HINT=true
+BAZARR_PROVIDERS_MOVIES_ENDPOINT=/api/providers/movies
+
+ENABLE_RADARR_RELEASE_INSPECTION=true
+ENABLE_RADARR_MOVIES_SEARCH_FALLBACK=false
+ENABLE_RADARR_DELETE_EXISTING_FILE_ON_POOR=true
+
+RADARR_GRAB_VERIFY_ENABLED=true
+RADARR_GRAB_VERIFY_TIMEOUT_SECONDS=45
+RADARR_GRAB_VERIFY_POLL_SECONDS=5
+RADARR_GRAB_VERIFY_USE_HISTORY=false
 ```
 
 ---
 
-# 🔌 טעינת ENV
+## כלי בדיקה
 
-## Linux
+קיים סקריפט עזר לבדיקת API של Bazarr:
 
 ```bash
-set -a
-source .env
-set +a
-```
-
-## Windows
-
-```powershell
-Get-Content .env | foreach {
- $name, $value = $_ -split '=', 2
- [System.Environment]::SetEnvironmentVariable($name, $value)
-}
+python bazarr_api_probe.py --endpoint /api/movies/history --query radarrId=11
+python bazarr_api_probe.py --endpoint /api/providers/movies --query radarrid=11
 ```
 
 ---
 
-# ▶️ הרצה
-
-```bash
-python radarr_bazarr_option1.py
-```
-
----
-
-# 🧠 State Management
-
-## למה צריך state.json?
-
-כדי למנוע:
-
-* לולאות
-* חיפוש כפול
-* overload
-
----
-
-## מה נשמר?
-
-```json
-{
-  "movies": {
-    "123": {
-      "status": "done",
-      "release_hint": "...",
-      "attempts": 1
-    }
-  }
-}
-```
-
----
-
-# 🔍 התאמת Bazarr (החלק הכי חשוב)
-
-## 🚨 Bazarr API לא אחיד
-
-צריך לבדוק ידנית איך Bazarr שלך עובד.
-
----
-
-## 🔧 איך למצוא את ה־API של Bazarr שלך
-
-### שלב 1
-
-פתח דפדפן
-
-### שלב 2
-
-פתח:
-
-```
-Developer Tools (F12)
-```
-
-### שלב 3
-
-לך ל־Network
-
-### שלב 4
-
-בצע:
-
-* חיפוש כתוביות
-* או refresh
-
-### שלב 5
-
-מצא request
-
-### שלב 6
-
-בדוק:
-
-* URL
-* Method
-* Headers
-* Payload
-
----
-
-## 📌 ואז
-
-עדכן בקוד:
-
-```python
-BAZARR_MOVIE_LOOKUP_ENDPOINT
-BAZARR_SEARCH_ENDPOINT
-```
-
----
-
-# 🧪 Debugging
-
-## אם אין כתוביות
-
-בעיה:
-
-* endpoint לא נכון
-* parser לא מתאים
-
----
-
-## אם תמיד יש follow-up
-
-בעיה:
-
-* thresholds גבוהים מדי
-
----
-
-## אם לא קורה כלום
-
-בדוק:
-
-* hasFile
-* logs
-
----
-
-# 🧯 מניעת לולאות
-
-הסקריפט כולל:
-
-✔ cooldown
-✔ max attempts
-✔ state tracking
-
----
-
-# 🚀 שיפורים עתידיים
-
-## אפשר להוסיף:
-
-### 1. Exact release grab
-
-(צריך Radarr API בדוק)
-
-### 2. Docker
-
-### 3. Web UI
-
-### 4. Webhooks במקום polling
-
-### 5. Matching חכם יותר
-
----
-
-# 🧠 Design Philosophy
-
-הסקריפט בנוי להיות:
-
-✔ בטוח
-✔ לא הורס מערכת קיימת
-✔ לא נכנס ללולאות
-✔ לא מניח דברים לא ודאיים
-
----
-
-# ⚠️ סיכום מגבלות
-
-| תחום              | מצב             |
-| ----------------- | --------------- |
-| Radarr Movie API  | ✔ יציב          |
-| Radarr Search     | ✔ יציב          |
-| Radarr Exact Grab | ❌ תלוי instance |
-| Bazarr API        | ❌ משתנה         |
-| Subtitle Matching | ⚠ heuristic     |
-
----
-
-# ❤️ טיפ חשוב
-
-תתחיל עם:
-
-```
-LOG_LEVEL=DEBUG
-```
-
-ותראה בדיוק מה קורה.
-
----
-
-# 🏁 סיום
-
-זה לא רק סקריפט — זה מנוע אופטימיזציה קטן בין Radarr ל־Bazarr.
-
-ככל שתתאים את Bazarr adapter — זה יעבוד יותר טוב.
+## הערות תפעול
+
+- אם סרט סומן `done` ב-`state.json`, הוא לא יעובד שוב עד שתמחק את הרשומה שלו.
+- אם Radarr מחזיר שגיאת Download Client (למשל qBittorrent נכשל), הסקריפט יעבור למועמד הבא.
+- אם כל המועמדים נכשלו או לא התחילו בפועל, הסרט יסומן `manual_required`.

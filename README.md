@@ -75,6 +75,13 @@ docker compose down
 הערה:
 - בקונפיגורציית `basic`, בלי שם משתמש/סיסמה תקינים, המערכת תחזור אוטומטית ל־`none`.
 
+## Worker Runtime Config
+
+- ה־worker נטען תמיד עם קונפיג עדכני מה־SQLite בכל `start`.
+- שינוי הגדרות `worker-related` במסך `Settings` מפעיל restart אוטומטי ל־worker (או start אם הוא היה כבוי).
+- לכן שינוי `RADARR_API_KEY` / `BAZARR_API_KEY` דרך ה־UI נכנס לתוקף בלי restart לקונטיינר.
+- אם חסרות הגדרות חובה (`RADARR_URL`, `RADARR_API_KEY`, `BAZARR_URL`) ה־restart האוטומטי מדולג ותוצג הודעה מתאימה.
+
 ## אחסון נתונים
 
 מקור אמת:

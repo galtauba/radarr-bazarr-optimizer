@@ -2,15 +2,20 @@
 
 import threading
 import time
-from typing import Dict
+from typing import Callable, Dict, Optional
 
 from optimizer_app.engine import ProcessingEngine
 from optimizer_app.logging_utils import logger
 
 
 class WorkerManager:
-    def __init__(self, engine: ProcessingEngine) -> None:
+    def __init__(
+        self,
+        engine: ProcessingEngine,
+        engine_factory: Optional[Callable[[], ProcessingEngine]] = None,
+    ) -> None:
         self.engine = engine
+        self._engine_factory = engine_factory
         self._thread = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
@@ -20,6 +25,8 @@ class WorkerManager:
         with self._lock:
             if self._running:
                 return False
+            if self._engine_factory is not None:
+                self.engine = self._engine_factory()
             self._stop_event.clear()
             self._thread = threading.Thread(target=self._loop, name="optimizer-worker", daemon=True)
             self._running = True
@@ -44,6 +51,14 @@ class WorkerManager:
     def status(self) -> Dict[str, bool]:
         with self._lock:
             return {"running": bool(self._running)}
+
+    def restart(self) -> bool:
+        was_running = self.status().get("running", False)
+        if was_running:
+            self.stop()
+            self.start()
+            return True
+        return False
 
     def run_single_cycle(self) -> None:
         self.engine.run_once()

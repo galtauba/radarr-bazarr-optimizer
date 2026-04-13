@@ -26,20 +26,25 @@ def run_app() -> None:
     # refresh logger level from DB-backed config
     setup_logging(cfg.log_level)
 
-    http = HttpClient(
-        timeout=cfg.http_timeout,
-        retries=cfg.http_retries,
-        backoff_seconds=cfg.http_backoff_seconds,
-        verify_ssl=cfg.verify_ssl,
-        user_agent=cfg.user_agent,
-    )
-    state = StateManager(cfg.db_path, cfg, store)
-    radarr = RadarrClient(cfg, http)
-    bazarr = BazarrClient(cfg, http)
-    engine = ProcessingEngine(cfg, state, bazarr, radarr)
-    worker = WorkerManager(engine)
+    def build_engine_from_db() -> ProcessingEngine:
+        runtime_cfg = config_service.get_runtime_config()
+        setup_logging(runtime_cfg.log_level)
+        http = HttpClient(
+            timeout=runtime_cfg.http_timeout,
+            retries=runtime_cfg.http_retries,
+            backoff_seconds=runtime_cfg.http_backoff_seconds,
+            verify_ssl=runtime_cfg.verify_ssl,
+            user_agent=runtime_cfg.user_agent,
+        )
+        state = StateManager(runtime_cfg.db_path, runtime_cfg, store)
+        radarr = RadarrClient(runtime_cfg, http)
+        bazarr = BazarrClient(runtime_cfg, http)
+        return ProcessingEngine(runtime_cfg, state, bazarr, radarr)
 
-    app = create_web_app(config_service, worker, engine, radarr)
+    engine = build_engine_from_db()
+    worker = WorkerManager(engine, engine_factory=build_engine_from_db)
+
+    app = create_web_app(config_service, worker)
     logger.info("Web console starting on %s:%s", cfg.web_host, cfg.web_port)
     ready_for_worker = bool(cfg.radarr_url and cfg.radarr_api_key and cfg.bazarr_url)
     if cfg.worker_auto_start and config_service.onboarding_completed() and ready_for_worker:

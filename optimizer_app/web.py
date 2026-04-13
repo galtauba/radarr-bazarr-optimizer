@@ -9,9 +9,7 @@ from typing import Any, Dict, Optional
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, stream_with_context, url_for
 
 from optimizer_app.config_service import ConfigService
-from optimizer_app.engine import ProcessingEngine
 from optimizer_app.logging_utils import logger
-from optimizer_app.radarr_client import RadarrClient
 from optimizer_app.worker import WorkerManager
 
 
@@ -22,8 +20,6 @@ def hash_password(value: str) -> str:
 def create_web_app(
     config_service: ConfigService,
     worker: WorkerManager,
-    engine: ProcessingEngine,
-    radarr: RadarrClient,
 ) -> Flask:
     runtime_config = config_service.get_runtime_config()
     app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -33,14 +29,37 @@ def create_web_app(
     def favicon():
         return redirect(url_for("static", filename="logo.svg"), code=302)
 
+    def _engine():
+        return worker.engine
+
+    def _radarr():
+        return worker.engine.radarr
+
+    def _has_worker_related_changes(before: Dict[str, Any], after: Dict[str, Any]) -> bool:
+        non_worker_keys = {
+            "auth_mode",
+            "auth_username",
+            "auth_password_hash",
+            "web_secret_key",
+            "web_host",
+            "web_port",
+        }
+        all_keys = set(before.keys()) | set(after.keys())
+        for key in all_keys:
+            if key in non_worker_keys:
+                continue
+            if before.get(key) != after.get(key):
+                return True
+        return False
+
     def _state_version() -> str:
-        rows = engine.state.store.list_movies(view="all")
+        rows = _engine().state.store.list_movies(view="all")
         max_updated = ""
         for row in rows:
             updated_at = str(row.get("updated_at") or "")
             if updated_at > max_updated:
                 max_updated = updated_at
-        last_run = str(engine.state.store.get_meta("last_run") or "")
+        last_run = str(_engine().state.store.get_meta("last_run") or "")
         return f"{len(rows)}|{max_updated}|{last_run}"
 
     def _filter_movie_rows(rows, query: str):
@@ -122,13 +141,13 @@ def create_web_app(
     @_require_login
     def dashboard():
         cfg = config_service.get_runtime_config()
-        counts = engine.state.store.get_dashboard_counts()
+        counts = _engine().state.store.get_dashboard_counts()
         return render_template(
             "dashboard.html",
             worker=worker.status(),
             counts=counts,
             config=cfg,
-            last_run=engine.state.store.get_meta("last_run"),
+            last_run=_engine().state.store.get_meta("last_run"),
         )
 
     @app.route("/settings", methods=["GET", "POST"])
@@ -136,13 +155,31 @@ def create_web_app(
     def settings_page():
         defaults = config_service.get_defaults_map()
         current = config_service.get_settings_map()
+        before_save = dict(current)
         merged = dict(defaults)
         merged.update(current)
         if request.method == "POST":
             incoming = _extract_settings_from_form(defaults, request.form.to_dict())
             _handle_auth_form(incoming, request.form)
             config_service.save_settings(incoming, onboarding_complete=False)
-            flash("Settings saved", "success")
+            after_save = config_service.get_settings_map()
+            if _has_worker_related_changes(before_save, after_save):
+                cfg_after = config_service.get_runtime_config()
+                ready_for_worker = bool(cfg_after.radarr_url and cfg_after.radarr_api_key and cfg_after.bazarr_url)
+                if ready_for_worker:
+                    try:
+                        if worker.status().get("running"):
+                            worker.restart()
+                        else:
+                            worker.start()
+                        flash("Settings saved. Worker restarted automatically with latest DB configuration.", "success")
+                    except Exception as exc:
+                        logger.exception("Automatic worker restart failed after settings save: %s", exc)
+                        flash(f"Settings saved, but worker auto-restart failed: {exc}", "error")
+                else:
+                    flash("Settings saved. Worker restart skipped: missing required Radarr/Bazarr configuration.", "error")
+            else:
+                flash("Settings saved", "success")
             return redirect(url_for("settings_page"))
         return render_template(
             "settings.html",
@@ -155,7 +192,7 @@ def create_web_app(
     def movies():
         view = str(request.args.get("view", "active"))
         query = str(request.args.get("q", "")).strip()
-        all_rows = engine.state.store.list_movies(view=view)
+        all_rows = _engine().state.store.list_movies(view=view)
         rows = _filter_movie_rows(all_rows, query)
         return render_template(
             "movies.html",
@@ -172,7 +209,7 @@ def create_web_app(
         if len(query) < 2:
             return jsonify({"ok": True, "items": []})
 
-        rows = engine.state.store.list_movies(view="all")
+        rows = _engine().state.store.list_movies(view="all")
         items = []
         seen = set()
 
@@ -236,7 +273,7 @@ def create_web_app(
     @app.route("/movies/<int:movie_id>")
     @_require_login
     def movie_detail(movie_id: int):
-        detail = engine.state.store.get_movie_detail(movie_id)
+        detail = _engine().state.store.get_movie_detail(movie_id)
         if not detail:
             flash("Movie not found", "error")
             return redirect(url_for("movies"))
@@ -246,13 +283,13 @@ def create_web_app(
     @_require_login
     def movie_recheck(movie_id: int):
         try:
-            all_movies = radarr.get_movies()
+            all_movies = _radarr().get_movies()
             target = next((m for m in all_movies if int(m.get("id", -1)) == int(movie_id)), None)
             if not target:
                 flash("Movie not found in Radarr", "error")
                 return redirect(url_for("movie_detail", movie_id=movie_id))
-            engine.process_movie(target)
-            engine.state.save()
+            _engine().process_movie(target)
+            _engine().state.save()
             flash("Recheck completed", "success")
         except Exception as exc:
             logger.exception("Recheck failed for movie %s: %s", movie_id, exc)
@@ -262,7 +299,7 @@ def create_web_app(
     @app.route("/movies/<int:movie_id>/retry", methods=["POST"])
     @_require_login
     def movie_retry(movie_id: int):
-        ok = engine.state.store.update_movie_action(movie_id, "retry")
+        ok = _engine().state.store.update_movie_action(movie_id, "retry")
         flash("Retry flags reset" if ok else "Retry action failed", "success" if ok else "error")
         return redirect(url_for("movie_detail", movie_id=movie_id))
 
@@ -270,7 +307,7 @@ def create_web_app(
     @_require_login
     def movie_state_action(movie_id: int):
         action = str(request.form.get("action", "")).strip()
-        ok = engine.state.store.update_movie_action(movie_id, action)
+        ok = _engine().state.store.update_movie_action(movie_id, action)
         flash("State updated" if ok else "Invalid state action", "success" if ok else "error")
         return redirect(url_for("movie_detail", movie_id=movie_id))
 

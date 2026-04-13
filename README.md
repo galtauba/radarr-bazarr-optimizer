@@ -29,32 +29,59 @@ python app.py
 
 ## Docker / Docker Compose
 
-נוצרו קבצים:
+הפרויקט כולל תמיכה מלאה בפריסה עם Docker באמצעות:
 - `Dockerfile`
 - `docker-compose.yml`
 - `.dockerignore`
 
-הרצה עם Docker Compose:
+### דרישות מקדימות
+- Docker
+- Docker Compose (v2)
+
+### הרצה
 
 ```bash
 docker compose up -d --build
 ```
 
-עצירה:
+ממשק ה־Web יהיה זמין בכתובת:
+- `http://127.0.0.1:8686`
+
+### עצירה
 
 ```bash
 docker compose down
 ```
 
-שמירת נתונים מקומית:
+### שמירת נתונים (Persistence)
+
 - ה־compose ממפה volume מקומי:
   - `./data` (במכונה שלך) -> `/app/data` (בקונטיינר)
-- לכן ה־SQLite נשמר מחוץ לקונטיינר תחת:
+- קובץ ה־SQLite נשמר בנתיב:
   - `./data/optimizer.db`
 
-שים לב:
-- ודא שב־`.env` מוגדר:
-  - `DB_PATH=data/optimizer.db`
+כך הנתונים נשמרים גם אחרי restart/redeploy לקונטיינר.
+
+### קונפיגורציה דרך משתני סביבה
+
+`docker-compose.yml` טוען משתני סביבה מתוך `.env`.
+
+מינימום נדרש לאינטגרציה מלאה:
+- `RADARR_URL`
+- `RADARR_API_KEY`
+- `BAZARR_URL`
+- `BAZARR_API_KEY`
+- `DB_PATH=data/optimizer.db`
+
+אם ה־API keys לא מוגדרים, הממשק יעלה, אבל האוטומציה מול Radarr/Bazarr לא תפעל.
+
+### עדכון / בנייה מחדש
+
+אחרי שינוי קוד:
+
+```bash
+docker compose up -d --build
+```
 
 ## קונפיגורציה
 

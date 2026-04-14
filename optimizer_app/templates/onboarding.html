@@ -13,17 +13,17 @@
       {% for key in all_keys %}
         {% if key in ["radarr_api_key","bazarr_api_key"] %}
           <label>{{ key }}
-            <input type="password" name="{{ key }}" value="{{ settings.get(key,'') }}">
+            <input type="password" name="{{ key }}" value="{{ settings.get(key) or '' }}">
           </label>
         {% elif key in ["preferred_languages"] %}
           <label>{{ key }} (comma separated)
-            <input type="text" name="{{ key }}" value="{{ settings.get(key,[])|join(',') }}">
+                <input type="text" name="{{ key }}" value="{{ (settings.get(key) or [])|join(',') }}">
           </label>
         {% elif settings.get(key) is boolean %}
           <label class="checkbox"><input type="checkbox" name="{{ key }}" {% if settings.get(key) %}checked{% endif %}> {{ key }}</label>
         {% else %}
           <label>{{ key }}
-            <input type="text" name="{{ key }}" value="{{ settings.get(key,'') }}">
+            <input type="text" name="{{ key }}" value="{{ settings.get(key) or '' }}">
           </label>
         {% endif %}
       {% endfor %}
@@ -35,12 +35,12 @@
         </select>
       </label>
       <label>auth_username
-        <input type="text" name="auth_username" value="{{ settings.get('auth_username','') }}">
+        <input type="text" name="auth_username" value="{{ settings.get('auth_username') or '' }}">
       </label>
       <label>auth_password (optional)
         <input type="password" name="auth_password" value="">
       </label>
-      <input type="hidden" name="auth_password_hash" value="{{ settings.get('auth_password_hash','') }}">
+      <input type="hidden" name="auth_password_hash" value="{{ settings.get('auth_password_hash') or '' }}">
       <button type="submit" class="btn full">Save Onboarding</button>
     </form>
   </div>

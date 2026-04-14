@@ -52,6 +52,7 @@ class ProcessingEngine:
                 ms["detected"] = True
                 ms["title"] = movie.get("title")
                 ms["year"] = movie.get("year")
+                ms["imdb_id"] = movie.get("imdbId")
                 ms["first_seen_at"] = ms.get("first_seen_at") or now_iso
                 ms["radarr_date_added"] = movie.get("added") or movie.get("dateAdded")
                 if self.has_movie_file(movie):
@@ -500,6 +501,7 @@ class ProcessingEngine:
             return
 
         logger.info("Received %s movie(s) from Radarr", len(movies))
+        self.state.store.relink_removed_movies_by_imdb(movies)
         current_ids = [int(m["id"]) for m in movies if isinstance(m, dict) and m.get("id") is not None]
         self.state.store.reconcile_radarr_presence(current_ids)
         self._seed_existing_movies_as_done_once(movies)

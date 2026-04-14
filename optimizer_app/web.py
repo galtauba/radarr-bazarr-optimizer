@@ -122,9 +122,9 @@ def create_web_app(
     @app.route("/onboarding", methods=["GET", "POST"])
     def onboarding():
         defaults = config_service.get_defaults_map()
-        current = config_service.get_settings_map()
-        merged = dict(defaults)
-        merged.update(current)
+        # On first run, show direct .env-derived values (and empty fields for missing env vars)
+        # instead of DB bootstrap/runtime defaults.
+        merged = config_service.get_onboarding_seed_map()
         if request.method == "POST":
             incoming = _extract_settings_from_form(defaults, request.form.to_dict())
             _handle_auth_form(incoming, request.form)

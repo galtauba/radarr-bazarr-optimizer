@@ -256,6 +256,11 @@ def app_config_from_settings(settings: Dict[str, Any], defaults: AppConfig) -> A
                 data[key] = default_value
         elif isinstance(default_value, list):
             data[key] = parse_list_value(value)
+        elif isinstance(default_value, str):
+            if value is None:
+                data[key] = default_value
+            else:
+                data[key] = str(value).strip()
         else:
             data[key] = value
     return AppConfig(**data)

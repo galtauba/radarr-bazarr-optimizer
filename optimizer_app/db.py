@@ -13,6 +13,7 @@ from optimizer_app.utils import utc_now_iso
 MOVIE_STATE_DEFAULTS: Dict[str, Any] = {
     "status": "new",
     "detected": False,
+    "imdb_id": None,
     "first_seen_at": None,
     "radarr_date_added": None,
     "file_detected_at": None,
@@ -46,6 +47,22 @@ def _json_load(value: Optional[str], default: Any = None) -> Any:
         return json.loads(value)
     except Exception:
         return default
+
+
+def _normalize_imdb_id(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.lower() in {"none", "null", "tt0"}:
+        return None
+    if not text.startswith("tt"):
+        return None
+    digits = text[2:]
+    if not digits.isdigit():
+        return None
+    return f"tt{digits}"
 
 
 class SQLiteStore:
@@ -434,3 +451,120 @@ class SQLiteStore:
         for movie_id in to_remove:
             logger.info("Movie %s disappeared from Radarr. Marking as soft-removed in local DB.", movie_id)
             self.set_removed(movie_id)
+
+    def relink_removed_movies_by_imdb(self, movies: List[Dict[str, Any]]) -> None:
+        for movie in movies:
+            try:
+                self._relink_removed_movie_by_imdb(movie)
+            except Exception as exc:
+                movie_id = movie.get("id")
+                logger.warning("Failed IMDb relink check for movie id=%s: %s", movie_id, exc)
+
+    def _relink_removed_movie_by_imdb(self, movie: Dict[str, Any]) -> None:
+        new_movie_id = int(movie.get("id"))
+        imdb_id = _normalize_imdb_id(movie.get("imdbId"))
+        if not imdb_id:
+            return
+
+        new_title = movie.get("title")
+        new_year = movie.get("year")
+
+        with self.lock:
+            existing_new = self.conn.execute(
+                "SELECT COUNT(*) AS c FROM movies WHERE radarr_movie_id=?",
+                (new_movie_id,),
+            ).fetchone()
+            if existing_new and int(existing_new["c"] or 0) > 0:
+                return
+
+            match_rows = self.conn.execute(
+                """
+                SELECT radarr_movie_id, MAX(COALESCE(removed_at, updated_at)) AS ts
+                FROM movies
+                WHERE is_removed=1
+                  AND json_extract(state_json, '$.imdb_id') = ?
+                GROUP BY radarr_movie_id
+                ORDER BY ts DESC
+                """,
+                (imdb_id,),
+            ).fetchall()
+
+            if not match_rows:
+                return
+
+            if len(match_rows) > 1:
+                logger.info(
+                    "Skipping IMDb relink for Radarr movie id=%s imdb=%s due to ambiguity (%s removed matches).",
+                    new_movie_id,
+                    imdb_id,
+                    len(match_rows),
+                )
+                return
+
+            old_movie_id = int(match_rows[0]["radarr_movie_id"])
+            if old_movie_id == new_movie_id:
+                return
+
+            old_rows = self.conn.execute(
+                """
+                SELECT id, state_json FROM movies
+                WHERE radarr_movie_id=?
+                ORDER BY cycle ASC
+                """,
+                (old_movie_id,),
+            ).fetchall()
+            if not old_rows:
+                return
+
+            now = utc_now_iso()
+
+            for old_row in old_rows:
+                state = _json_load(old_row["state_json"], {}) or {}
+                state["movie_id"] = new_movie_id
+                if new_title is not None:
+                    state["title"] = new_title
+                if new_year is not None:
+                    state["year"] = new_year
+                state["imdb_id"] = imdb_id
+                self.conn.execute(
+                    """
+                    UPDATE movies
+                    SET radarr_movie_id=?, title=?, year=?, state_json=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (new_movie_id, new_title, new_year, _json_dump(state), now, int(old_row["id"])),
+                )
+
+            self.conn.execute(
+                "UPDATE movie_events SET radarr_movie_id=? WHERE radarr_movie_id=?",
+                (new_movie_id, old_movie_id),
+            )
+            self.conn.commit()
+
+        with self.lock:
+            row = self.conn.execute(
+                """
+                SELECT id, cycle FROM movies
+                WHERE radarr_movie_id=?
+                ORDER BY cycle DESC
+                LIMIT 1
+                """,
+                (new_movie_id,),
+            ).fetchone()
+
+        if row:
+            self.add_event(
+                int(row["id"]),
+                new_movie_id,
+                int(row["cycle"]),
+                "imdb_relinked",
+                "Movie relinked by IMDb after Radarr re-add with new movie id.",
+                {"old_radarr_movie_id": old_movie_id, "new_radarr_movie_id": new_movie_id, "imdb_id": imdb_id},
+            )
+
+        logger.info(
+            "Relinked movie by IMDb %s: old Radarr id=%s -> new Radarr id=%s",
+            imdb_id,
+            old_movie_id,
+            new_movie_id,
+        )

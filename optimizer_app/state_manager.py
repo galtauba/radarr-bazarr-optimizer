@@ -58,6 +58,7 @@ class StateManager:
                 ms["detected"] = True
                 ms["title"] = movie.get("title")
                 ms["year"] = movie.get("year")
+                ms["imdb_id"] = movie.get("imdbId")
                 ms["first_seen_at"] = utc_now_iso()
                 ms["radarr_date_added"] = movie.get("added") or movie.get("dateAdded")
                 ms["status"] = "waiting_for_file"

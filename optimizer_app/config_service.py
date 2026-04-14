@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 from typing import Any, Dict
 
 from optimizer_app.config import AppConfig, app_config_from_settings, config_to_settings_map, load_config
@@ -33,6 +34,46 @@ class ConfigService:
 
     def get_defaults_map(self) -> Dict[str, Any]:
         return config_to_settings_map(self.env_defaults)
+
+    def get_onboarding_seed_map(self) -> Dict[str, Any]:
+        """
+        Build onboarding prefill directly from process environment.
+        If a variable is missing in .env/environment, return an empty field value
+        (or [] for list fields) for display purposes.
+        """
+        defaults = self.get_defaults_map()
+        out: Dict[str, Any] = {}
+        for key, default in defaults.items():
+            env_name = key.upper()
+            raw = os.getenv(env_name)
+
+            if isinstance(default, list):
+                out[key] = parse_list_value(raw) if raw is not None else []
+                continue
+
+            if raw is None:
+                if isinstance(default, bool):
+                    out[key] = False
+                else:
+                    out[key] = ""
+                continue
+
+            if isinstance(default, bool):
+                out[key] = str(raw).strip().lower() in ("1", "true", "yes", "on", "y")
+            elif isinstance(default, int):
+                try:
+                    out[key] = int(raw)
+                except Exception:
+                    out[key] = ""
+            elif isinstance(default, float):
+                try:
+                    out[key] = float(raw)
+                except Exception:
+                    out[key] = ""
+            else:
+                out[key] = str(raw).strip()
+
+        return out
 
     def save_settings(self, values: Dict[str, Any], *, onboarding_complete: bool = False) -> None:
         # auth fallback: if basic selected without full credentials -> disable auth

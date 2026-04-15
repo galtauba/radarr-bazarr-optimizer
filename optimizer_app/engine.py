@@ -467,7 +467,31 @@ class ProcessingEngine:
             manual_required_reason = "Radarr release inspection is disabled."
 
         if not success and self.config.enable_radarr_movies_search_fallback:
-            logger.warning("MoviesSearch fallback is enabled but strict exact mode requested; fallback is intentionally skipped.")
+            logger.warning(
+                "Strict match was not found for %s; triggering Radarr MoviesSearch fallback and closing this cycle.",
+                label,
+            )
+            try:
+                accepted, note, command_result = self.radarr.trigger_movies_search(movie_id)
+                if accepted:
+                    fallback_reason = (
+                        f"No strict Radarr release match was found; automatic MoviesSearch fallback was triggered. {note}"
+                    )
+                    logger.info("Radarr MoviesSearch fallback accepted for %s: %s", label, note)
+                    self.state.record_moviessearch_fallback_triggered(
+                        movie_id,
+                        fallback_reason,
+                        command_result=command_result,
+                    )
+                    self.state.save()
+                    logger.info("Movie moved to closed fallback status for %s", label)
+                    return
+
+                manual_required_reason = f"{manual_required_reason or 'Strict match failed.'} MoviesSearch fallback failed: {note}"
+                logger.warning("Radarr MoviesSearch fallback failed for %s: %s", label, note)
+            except Exception as exc:
+                manual_required_reason = f"{manual_required_reason or 'Strict match failed.'} MoviesSearch fallback exception: {exc}"
+                logger.error("Radarr MoviesSearch fallback failed for %s: %s", label, exc)
 
         self.state.record_followup_attempt(
             movie_id,

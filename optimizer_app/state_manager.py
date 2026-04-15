@@ -183,5 +183,35 @@ class StateManager:
             },
         )
 
+    def record_moviessearch_fallback_triggered(
+        self,
+        movie_id: int,
+        reason: str,
+        command_result: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        from optimizer_app.utils import utc_now_iso
+
+        def mutator(ms: Dict[str, Any]) -> None:
+            ms["radarr_followup_attempts"] = int(ms.get("radarr_followup_attempts") or 0) + 1
+            ms["radarr_followup_last_at"] = utc_now_iso()
+            ms["radarr_followup_success"] = True
+            ms["selected_release_candidate"] = None
+            ms["manual_required_reason"] = reason
+            ms["status"] = "radarr_moviessearch_fallback_triggered"
+            ms["done"] = True
+
+        updated = self.store.update_movie_state(movie_id, mutator)
+        self.store.add_event(
+            int(updated["_db_id"]),
+            movie_id,
+            int(updated["_cycle"]),
+            "radarr_moviessearch_fallback",
+            "Strict match not found; triggered Radarr MoviesSearch fallback and closed cycle.",
+            {
+                "reason": reason,
+                "command_result": command_result or {},
+            },
+        )
+
     def list_tracked_movie_ids(self):
         return self.store.list_tracked_radarr_ids()

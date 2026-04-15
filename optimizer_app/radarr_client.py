@@ -328,3 +328,37 @@ class RadarrClient:
         if self.config.radarr_grab_verify_use_history:
             return False, "grab not confirmed in queue/history within timeout"
         return False, "grab not confirmed in queue within timeout"
+
+    def trigger_movies_search(self, movie_id: int) -> Tuple[bool, str, Dict[str, Any]]:
+        url = f"{self.base_url}/api/v3/command"
+        payload = {
+            "name": "MoviesSearch",
+            "movieIds": [int(movie_id)],
+        }
+        resp = self.http.request(
+            "POST",
+            url,
+            headers=self.headers,
+            json_body=payload,
+            allow_statuses=[400, 404, 409, 422],
+        )
+        try:
+            data = resp.json()
+            if not isinstance(data, dict):
+                data = {"data": data}
+        except Exception:
+            data = {"text": resp.text[:500]}
+
+        data.setdefault("status_code", resp.status_code)
+
+        if resp.status_code >= 400:
+            message = str(data.get("message") or data.get("error") or data.get("text") or "MoviesSearch command failed")
+            return False, f"HTTP {resp.status_code}: {message}", data
+
+        command_name = str(data.get("name") or "")
+        command_id = data.get("id")
+        command_status = str(data.get("status") or "")
+        note = f"MoviesSearch command accepted (id={command_id}, status={command_status or 'queued'})"
+        if command_name:
+            note = f"{command_name} accepted (id={command_id}, status={command_status or 'queued'})"
+        return True, note, data

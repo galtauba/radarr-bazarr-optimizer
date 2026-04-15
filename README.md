@@ -92,6 +92,7 @@ docker compose up -d --build
 - `RADARR_API_KEY`
 - `BAZARR_URL`
 - `BAZARR_API_KEY`
+- `ENABLE_RADARR_MOVIES_SEARCH_FALLBACK`
 - `WEB_HOST`
 - `WEB_PORT`
 - `WEB_SECRET_KEY`
@@ -135,6 +136,18 @@ docker compose up -d --build
 - סרט שנמחק ב־Radarr מסומן soft-delete (`removed_at`).
 - אם אותו סרט חוזר, נפתח cycle חדש ונשמרת היסטוריה.
 - ב־first run סרטים קיימים מסומנים כ־`done` כדי שהמערכת תתמקד בסרטים חדשים.
+
+### MoviesSearch Fallback (אופציונלי)
+
+- כאשר לא נמצאת התאמה מדויקת בתהליך ה־follow-up, ניתן להפעיל fallback אוטומטי ל־Radarr `MoviesSearch`.
+- ההפעלה נשלטת ע״י `ENABLE_RADARR_MOVIES_SEARCH_FALLBACK`.
+- אם הערך הוא `false`:
+  - לא יישלח `MoviesSearch`
+  - הסרט יישאר ב־`manual_required`.
+- אם הערך הוא `true` והפקודה התקבלה:
+  - נשלחת פקודת `POST /api/v3/command` עם `name=MoviesSearch`.
+  - הסרט נסגר במחזור הנוכחי עם סטטוס `radarr_moviessearch_fallback_triggered`.
+  - נשמר reason ברור שלא נמצאה התאמה מדויקת והופעל חיפוש אוטומטי.
 
 ### זיהוי סרטים ו־IMDb Relink
 
